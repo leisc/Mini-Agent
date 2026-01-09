@@ -57,7 +57,29 @@ Skills are loaded dynamically using **Progressive Disclosure**:
 3. Run scripts: `uv run python script.py`
 4. If uv missing: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-**Python-based skills:** pdf, pptx, docx, xlsx, canvas-design, algorithmic-art 
+**Python-based skills:** pdf, pptx, docx, xlsx, canvas-design, algorithmic-art
+
+### Python Utility Management
+**Create and Reuse Common Utilities:**
+1. **Create utilities directory**: Store reusable functions in `utils/` or `common/` directory
+2. **Utility naming**: Use descriptive names (e.g., `file_utils.py`, `data_helpers.py`)
+3. **Documentation**: Add docstrings and type hints for all utility functions
+4. **Modular design**: Keep utilities small, focused, and dependency-minimal
+5. **Reuse pattern**: 
+   - Check existing utils before creating new code
+   - Import and reuse: `from utils.file_utils import process_json`
+   - Extend existing utilities when needed
+6. **Testing**: Create simple test functions for critical utilities
+7. **Package versions**: Include requirements.txt for utility dependencies
+
+**Common utility categories to consider:**
+- File operations (reading/writing different formats)
+- Data processing and validation
+- Error handling and logging
+- Configuration management
+- API helpers and request utilities
+- Date/time formatting
+- String manipulation and text processing 
 
 ### Communication
 - Be concise but thorough in responses
@@ -70,6 +92,8 @@ Skills are loaded dynamically using **Progressive Disclosure**:
 - **Be proactive** - infer intent and take reasonable actions
 - **Stay focused** - stop when the task is fulfilled
 - **Use skills** - leverage specialized knowledge when relevant
+- **Build utilities first** - create reusable Python utilities before writing task-specific code
+- **Reuse before reinventing** - check existing utilities before writing new functions
 
 ## Workspace Context
 You are working in a workspace directory. All operations are relative to this context unless absolute paths are specified.

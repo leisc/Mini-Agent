@@ -13,7 +13,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from mini_agent import LLMClient
+from mini_agent import LLMClient,LLMProvider
 from mini_agent.agent import Agent
 from mini_agent.config import Config
 from mini_agent.tools import BashTool, EditTool, ReadTool, WriteTool
@@ -65,6 +65,7 @@ You have record_note and recall_notes tools. Use them to:
         # Initialize LLM
         llm_client = LLMClient(
             api_key=config.llm.api_key,
+            provider=config.llm.provider or LLMProvider.OPENAI,
             api_base=config.llm.api_base,
             model=config.llm.model,
         )
@@ -208,6 +209,7 @@ async def demo_interactive_mode():
         system_prompt = "You are a helpful assistant with access to tools."
         llm_client = LLMClient(
             api_key=config.llm.api_key,
+            provider=config.llm.provider or LLMProvider.OPENAI,
             api_base=config.llm.api_base,
             model=config.llm.model,
         )

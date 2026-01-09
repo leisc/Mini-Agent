@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from mini_agent.config import Config
 
-from mini_agent import LLMClient, LLMProvider
+from mini_agent import LLMClient, LLMProvider, Agent
 from mini_agent.schema import Message
 from mini_agent.tools.base import Tool, ToolResult
 
@@ -17,9 +18,12 @@ from mini_agent.tools.base import Tool, ToolResult
 def load_config():
     """Load config from config.yaml."""
     config_path = Path("mini_agent/config/config.yaml")
-    with open(config_path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    if not config_path.exists():
+        print("❌ config.yaml not found")
+        return
 
+    config = Config.from_yaml(config_path)
+    return config
 
 class WeatherTool(Tool):
     """Example weather tool."""
@@ -164,10 +168,11 @@ async def demo_tool_schemas():
 
     # Create client
     client = LLMClient(
-        api_key=config["api_key"],
-        provider=LLMProvider.ANTHROPIC,
-        model="MiniMax-M2",
-    )
+            api_key=config.llm.api_key,
+            provider=config.llm.provider or LLMProvider.OPENAI,
+            api_base=config.llm.api_base,
+            model=config.llm.model,
+        )
 
     # Test with a query that should trigger weather tool
     messages = [
@@ -204,6 +209,9 @@ async def demo_multiple_tools():
     """Demonstrate using multiple Tool instances."""
     config = load_config()
 
+    if not config:
+        return
+
     print("\n" + "=" * 60)
     print("Method 2: Using Multiple Tool Instances")
     print("=" * 60)
@@ -213,10 +221,11 @@ async def demo_multiple_tools():
     translate_tool = TranslateTool()
 
     client = LLMClient(
-        api_key=config["api_key"],
-        provider=LLMProvider.ANTHROPIC,
-        model="MiniMax-M2",
-    )
+            api_key=config.llm.api_key,
+            provider=config.llm.provider or LLMProvider.OPENAI,
+            api_base=config.llm.api_base,
+            model=config.llm.model,
+        )
 
     messages = [Message(role="user", content="Calculate 15 * 23 for me")]
 
@@ -258,6 +267,55 @@ async def demo_tool_schema_methods():
     print("\nSchema methods allow flexible tool usage with different LLM providers.")
 
 
+async def demo_tool_calls_with_agent(task: str):
+    """Demonstrate Tool calls with an Agent."""
+    config = load_config()
+
+    if not config:
+        return
+
+
+    # Create tool instances
+    weather_tool = WeatherTool()
+    search_tool = SearchTool()
+    calculate_tool = CalculatorTool()
+
+    # Initialize LLM client
+    llm_client = LLMClient(
+            api_key=config.llm.api_key,
+            provider=config.llm.provider or LLMProvider.OPENAI,
+            api_base=config.llm.api_base,
+            model=config.llm.model,
+        )
+
+    # Create agent
+    agent = Agent(
+        llm_client=llm_client,
+        system_prompt="You are a helpful assistant that can use tools.",
+        tools=[weather_tool, search_tool, calculate_tool],
+        max_steps=5,
+        workspace_dir=".",
+    )
+
+
+
+    print(f"\n📝 Task:\n{task}\n")
+    print("🤖 Agent is working...\n")
+
+    agent.add_user_message(task)
+
+    try:
+        result = await agent.run()
+
+        print("\n" + "=" * 60)
+        print("✅ Agent completed the task!")
+        print("=" * 60)
+        print(f"\nAgent's response:\n{result}\n")
+
+    except Exception as e:
+        print(f"\n❌ Error during agent execution: {e}")    
+
+
 async def main():
     """Run all demos."""
     print("\n🚀 Tool Schema Demo - Using Tool Base Class\n")
@@ -273,6 +331,14 @@ async def main():
         await demo_tool_schema_methods()
 
         print("\n✅ All demos completed successfully!")
+
+        # Task: Get weather info
+        task = "Can you tell me the current weather in New York City?"
+        await demo_tool_calls_with_agent(task)
+
+        #Task: Perform calculation
+        task2 = "What is the result of 12345 divided by 15?"
+        await demo_tool_calls_with_agent(task2)
 
     except Exception as e:
         print(f"\n❌ Error: {e}")

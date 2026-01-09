@@ -11,7 +11,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from mini_agent import LLMClient
+from mini_agent import LLMClient, LLMProvider
 from mini_agent.agent import Agent
 from mini_agent.config import Config
 from mini_agent.tools import BashTool, ReadTool, WriteTool
@@ -120,6 +120,7 @@ Guidelines:
         # Initialize LLM
         llm_client = LLMClient(
             api_key=config.llm.api_key,
+            provider=config.llm.provider or LLMProvider.OPENAI,
             api_base=config.llm.api_base,
             model=config.llm.model,
         )
@@ -129,8 +130,6 @@ Guidelines:
 
         # Tools including Session Note tools
         tools = [
-            ReadTool(workspace_dir=workspace_dir),
-            WriteTool(workspace_dir=workspace_dir),
             BashTool(),
             SessionNoteTool(memory_file=str(memory_file)),
             RecallNoteTool(memory_file=str(memory_file)),
@@ -237,8 +236,8 @@ async def main():
     print("This is a key feature for building production-ready agents.\n")
 
     # Run demos
-    await demo_direct_note_usage()
-    print("\n" * 2)
+    #await demo_direct_note_usage()
+    #print("\n" * 2)
     await demo_agent_with_notes()
 
     print("\n" + "=" * 60)

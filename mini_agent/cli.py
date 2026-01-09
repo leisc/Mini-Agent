@@ -176,6 +176,35 @@ def print_stats(agent: Agent, session_start: datetime):
     print(f"{Colors.DIM}{'─' * 40}{Colors.RESET}\n")
 
 
+class ConfigAction(argparse.Action):
+    """Custom action for --config-override argument"""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        """Parse config override arguments in format "key=value"
+
+        Supports dot notation for nested keys:
+            --config-override llm.model=gpt-4
+            --config-override agent.max_steps=200
+        """
+        if not hasattr(namespace, "config_overrides"):
+            setattr(namespace, "config_overrides", {})
+
+        try:
+            key, value = values.split("=", 1)
+
+            # Try to parse as JSON first (for complex types)
+            try:
+                import json
+                parsed_value = json.loads(value)
+            except json.JSONDecodeError:
+                # Treat as string
+                parsed_value = value
+
+            namespace.config_overrides[key] = parsed_value
+        except ValueError:
+            parser.error(f"Invalid override format: {values}. Expected 'key=value'")
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments
 
@@ -202,7 +231,36 @@ Examples:
         "--version",
         "-v",
         action="version",
-        version="mini-agent 0.1.0",
+        version="mini-agent 0.1.2",
+    )
+
+    # Configuration overrides
+    parser.add_argument(
+        "--config-override",
+        "-c",
+        action=ConfigAction,
+        default={},
+        help='Override configuration values (format: "key=value", e.g., "llm.model=gpt-4")',
+    )
+
+    parser.add_argument(
+        "--override-file",
+        "-o",
+        type=str,
+        default=None,
+        help='Path to config-override.yaml file',
+    )
+
+    parser.add_argument(
+        "--no-env-overrides",
+        action="store_true",
+        help="Disable environment variable overrides (MINI_AGENT_*)",
+    )
+
+    parser.add_argument(
+        "--config-verbose",
+        action="store_true",
+        help="Print detailed configuration override information",
     )
 
     return parser.parse_args()
@@ -321,18 +379,28 @@ def add_workspace_tools(tools: List[Tool], config: Config, workspace_dir: Path):
         print(f"{Colors.GREEN}✅ Loaded session note tool{Colors.RESET}")
 
 
-async def run_agent(workspace_dir: Path):
+async def run_agent(workspace_dir: Path, args: argparse.Namespace):
     """Run interactive Agent
 
     Args:
         workspace_dir: Workspace directory path
+        args: Parsed command-line arguments
     """
     session_start = datetime.now()
 
-    # 1. Load configuration from package directory
-    config_path = Config.get_default_config_path()
+    # 1. Load configuration with overrides
+    config_path_from_args = getattr(args, "override_file", None)
 
-    if not config_path.exists():
+    try:
+        config = Config.load_with_overrides(
+            override_file=Path(config_path_from_args) if config_path_from_args else None,
+            cli_args=getattr(args, "config_overrides", {}),
+            verbose=getattr(args, "config_verbose", False),
+            env_overrides=not getattr(args, "no_env_overrides", False),
+        )
+    except FileNotFoundError:
+        # Fallback to original error display
+        config_path = Config.get_default_config_path()
         print(f"{Colors.RED}❌ Configuration file not found{Colors.RESET}")
         print()
         print(f"{Colors.BRIGHT_CYAN}📦 Configuration Search Path:{Colors.RESET}")
@@ -355,19 +423,6 @@ async def run_agent(workspace_dir: Path):
         print(f"  {Colors.DIM}cp {example_config} {user_config_dir}/config.yaml{Colors.RESET}")
         print(f"  {Colors.DIM}# Then edit {user_config_dir}/config.yaml to add your API Key{Colors.RESET}")
         print()
-        return
-
-    try:
-        config = Config.from_yaml(config_path)
-    except FileNotFoundError:
-        print(f"{Colors.RED}❌ Error: Configuration file not found: {config_path}{Colors.RESET}")
-        return
-    except ValueError as e:
-        print(f"{Colors.RED}❌ Error: {e}{Colors.RESET}")
-        print(f"{Colors.YELLOW}Please check the configuration file format{Colors.RESET}")
-        return
-    except Exception as e:
-        print(f"{Colors.RED}❌ Error: Failed to load configuration file: {e}{Colors.RESET}")
         return
 
     # 2. Initialize LLM client
@@ -398,6 +453,8 @@ async def run_agent(workspace_dir: Path):
         provider=provider,
         api_base=config.llm.api_base,
         model=config.llm.model,
+        proxy=config.llm.proxy,
+        reasoning_split=config.llm.reasoning_split,
         retry_config=retry_config if config.llm.retry.enabled else None,
     )
 
@@ -589,8 +646,8 @@ def main():
     # Ensure workspace directory exists
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run the agent (config always loaded from package directory)
-    asyncio.run(run_agent(workspace_dir))
+    # Run the agent with configuration overrides
+    asyncio.run(run_agent(workspace_dir, args))
 
 
 if __name__ == "__main__":

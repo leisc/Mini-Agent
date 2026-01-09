@@ -1,0 +1,8 @@
+api_key: "sk-5784cfa33595487ba6b2c490f3df16af"          # API Key from step 1
+api_base: "http://127.0.0.1:8080"  # Global
+# LLM provider: "anthropic" or "openai"
+# The LLMClient will automatically append /anthropic or /v1 to api_base based on provider
+provider: "openai"  # Default: anthropic
+model: "qwen-coder"
+max_steps: 100
+workspace_dir: "./workspace"

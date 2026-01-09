@@ -3,6 +3,7 @@
 import json
 import logging
 from typing import Any
+import httpx
 
 from openai import AsyncOpenAI
 
@@ -27,6 +28,8 @@ class OpenAIClient(LLMClientBase):
         api_key: str,
         api_base: str = "https://api.minimaxi.com/v1",
         model: str = "MiniMax-M2",
+        proxy: str | None = None,
+        reasoning_split: bool = False,
         retry_config: RetryConfig | None = None,
     ):
         """Initialize OpenAI client.
@@ -37,7 +40,18 @@ class OpenAIClient(LLMClientBase):
             model: Model name to use (default: MiniMax-M2)
             retry_config: Optional retry configuration
         """
-        super().__init__(api_key, api_base, model, retry_config)
+        super().__init__(api_key, api_base, model, proxy, reasoning_split, retry_config)
+
+        if proxy:
+            # Configure HTTPX transport with proxy
+            client = httpx.AsyncClient(proxy=proxy)
+            self.client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=api_base,
+                http_client=client,
+            )
+            logger.info(f"OpenAIClient initialized with proxy: {proxy}")
+            return
 
         # Initialize OpenAI client
         self.client = AsyncOpenAI(
@@ -66,8 +80,13 @@ class OpenAIClient(LLMClientBase):
             "model": self.model,
             "messages": api_messages,
             # Enable reasoning_split to separate thinking content
-            "extra_body": {"reasoning_split": True},
+            #"extra_body": {"reasoning_split": True},
         }
+
+        if self.reasoning_split:
+            if "extra_body" not in params:
+                params["extra_body"] = {}
+            params["extra_body"]["reasoning_split"] = True
 
         if tools:
             params["tools"] = self._convert_tools(tools)

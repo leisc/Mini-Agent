@@ -4,6 +4,7 @@ Provides unified configuration loading and management functionality
 """
 
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -26,6 +27,8 @@ class LLMConfig(BaseModel):
     api_base: str = "https://api.minimax.io"
     model: str = "MiniMax-M2"
     provider: str = "anthropic"  # "anthropic" or "openai"
+    proxy: str | None = None
+    reasoning_split: bool = False
     retry: RetryConfig = Field(default_factory=RetryConfig)
 
 
@@ -63,13 +66,72 @@ class Config(BaseModel):
 
     @classmethod
     def load(cls) -> "Config":
-        """Load configuration from the default search path."""
+        """Load configuration from the default search path (without overrides)."""
         config_path = cls.get_default_config_path()
         if not config_path.exists():
             raise FileNotFoundError(
                 "Configuration file not found. Run scripts/setup-config.sh or place config.yaml in mini_agent/config/."
             )
         return cls.from_yaml(config_path)
+
+    @classmethod
+    def load_with_overrides(
+        cls,
+        override_file: Optional[Path] = None,
+        cli_args: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
+        env_overrides: bool = True,
+    ) -> "Config":
+        """Load configuration with runtime overrides.
+
+        Priority order: CLI args > Environment variables > Override file > Base config
+
+        Args:
+            override_file: Optional path to config-override.yaml
+            cli_args: Optional CLI arguments as dict {path: value}
+                       e.g., {"llm.model": "gpt-4", "agent.max_steps": 100}
+            verbose: Print override information to stdout
+            env_overrides: Enable environment variable overrides (default: True)
+
+        Returns:
+            Config instance with overrides applied
+
+        Example:
+            # Basic usage
+            config = Config.load_with_overrides(verbose=True)
+
+            # With CLI arguments
+            config = Config.load_with_overrides(
+                cli_args={"llm.model": "gpt-4", "agent.max_steps": 200},
+                verbose=True
+            )
+
+            # With override file
+            config = Config.load_with_overrides(
+                override_file=Path("config-override.yaml")
+            )
+        """
+        from .config_override import load_config_with_overrides
+
+        if not env_overrides:
+            # Temporarily disable env vars
+            import os
+            from .config_override import ConfigOverride
+
+            saved_env = {}
+            manager = ConfigOverride(verbose=False)
+            for env_var in manager.ENV_VAR_MAPPING.keys():
+                if env_var in os.environ:
+                    saved_env[env_var] = os.environ.pop(env_var)
+
+            try:
+                config = load_config_with_overrides(override_file, cli_args, verbose)
+            finally:
+                # Restore environment
+                os.environ.update(saved_env)
+            return config
+        else:
+            return load_config_with_overrides(override_file, cli_args, verbose)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Config":
@@ -118,6 +180,8 @@ class Config(BaseModel):
             api_base=data.get("api_base", "https://api.minimax.io"),
             model=data.get("model", "MiniMax-M2"),
             provider=data.get("provider", "anthropic"),
+            proxy=data.get("proxy"),
+            reasoning_split=data.get("reasoning_split", False),
             retry=retry_config,
         )
 

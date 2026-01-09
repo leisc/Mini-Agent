@@ -19,6 +19,8 @@ class LLMClientBase(ABC):
         api_key: str,
         api_base: str,
         model: str,
+        proxy: str | None = None,
+        reasoning_split: bool = False,
         retry_config: RetryConfig | None = None,
     ):
         """Initialize the LLM client.
@@ -32,6 +34,8 @@ class LLMClientBase(ABC):
         self.api_key = api_key
         self.api_base = api_base
         self.model = model
+        self.proxy = proxy
+        self.reasoning_split = reasoning_split
         self.retry_config = retry_config or RetryConfig()
 
         # Callback for tracking retry count
