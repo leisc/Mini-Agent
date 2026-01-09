@@ -18,7 +18,7 @@ from typing import List
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 
@@ -29,7 +29,7 @@ from mini_agent.schema import LLMProvider
 from mini_agent.tools.base import Tool
 from mini_agent.tools.bash_tool import BashKillTool, BashOutputTool, BashTool
 from mini_agent.tools.file_tools import EditTool, ReadTool, WriteTool
-from mini_agent.tools.mcp_loader import cleanup_mcp_connections, load_mcp_tools_async
+from mini_agent.tools.mcp_loader import cleanup_mcp_connections, load_mcp_tools_async, set_mcp_timeout_config
 from mini_agent.tools.note_tool import SessionNoteTool
 from mini_agent.tools.skill_tool import create_skill_tools
 from mini_agent.utils import calculate_display_width
@@ -83,7 +83,9 @@ def print_banner():
 
     print()
     print(f"{Colors.BOLD}{Colors.BRIGHT_CYAN}╔{'═' * BOX_WIDTH}╗{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.BRIGHT_CYAN}║{Colors.RESET}{' ' * left_padding}{banner_text}{' ' * right_padding}{Colors.BOLD}{Colors.BRIGHT_CYAN}║{Colors.RESET}")
+    print(
+        f"{Colors.BOLD}{Colors.BRIGHT_CYAN}║{Colors.RESET}{' ' * left_padding}{banner_text}{' ' * right_padding}{Colors.BOLD}{Colors.BRIGHT_CYAN}║{Colors.RESET}"
+    )
     print(f"{Colors.BOLD}{Colors.BRIGHT_CYAN}╚{'═' * BOX_WIDTH}╝{Colors.RESET}")
     print()
 
@@ -301,18 +303,22 @@ async def initialize_base_tools(config: Config):
         print(f"{Colors.BRIGHT_CYAN}Loading Claude Skills...{Colors.RESET}")
         try:
             # Resolve skills directory with priority search
-            skills_dir = config.tools.skills_dir
-            if not Path(skills_dir).is_absolute():
+            # Expand ~ to user home directory for portability
+            skills_path = Path(config.tools.skills_dir).expanduser()
+            if skills_path.is_absolute():
+                skills_dir = str(skills_path)
+            else:
                 # Search in priority order:
                 # 1. Current directory (dev mode: ./skills or ./mini_agent/skills)
                 # 2. Package directory (installed: site-packages/mini_agent/skills)
                 search_paths = [
-                    Path(skills_dir),  # ./skills for backward compatibility
-                    Path("mini_agent") / skills_dir,  # ./mini_agent/skills
-                    Config.get_package_dir() / skills_dir,  # site-packages/mini_agent/skills
+                    skills_path,  # ./skills for backward compatibility
+                    Path("mini_agent") / skills_path,  # ./mini_agent/skills
+                    Config.get_package_dir() / skills_path,  # site-packages/mini_agent/skills
                 ]
 
                 # Find first existing path
+                skills_dir = str(skills_path)  # default
                 for path in search_paths:
                     if path.exists():
                         skills_dir = str(path.resolve())
@@ -331,6 +337,18 @@ async def initialize_base_tools(config: Config):
     if config.tools.enable_mcp:
         print(f"{Colors.BRIGHT_CYAN}Loading MCP tools...{Colors.RESET}")
         try:
+            # Apply MCP timeout configuration from config.yaml
+            mcp_config = config.tools.mcp
+            set_mcp_timeout_config(
+                connect_timeout=mcp_config.connect_timeout,
+                execute_timeout=mcp_config.execute_timeout,
+                sse_read_timeout=mcp_config.sse_read_timeout,
+            )
+            print(
+                f"{Colors.DIM}  MCP timeouts: connect={mcp_config.connect_timeout}s, "
+                f"execute={mcp_config.execute_timeout}s, sse_read={mcp_config.sse_read_timeout}s{Colors.RESET}"
+            )
+
             # Use priority search for mcp.json
             mcp_config_path = Config.find_config_file(config.tools.mcp_config_path)
             if mcp_config_path:
@@ -409,7 +427,9 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
         print(f"  {Colors.DIM}3) <package>/config/config.yaml{Colors.RESET} (installed)")
         print()
         print(f"{Colors.BRIGHT_YELLOW}🚀 Quick Setup (Recommended):{Colors.RESET}")
-        print(f"  {Colors.BRIGHT_GREEN}curl -fsSL https://raw.githubusercontent.com/MiniMax-AI/Mini-Agent/main/scripts/setup-config.sh | bash{Colors.RESET}")
+        print(
+            f"  {Colors.BRIGHT_GREEN}curl -fsSL https://raw.githubusercontent.com/MiniMax-AI/Mini-Agent/main/scripts/setup-config.sh | bash{Colors.RESET}"
+        )
         print()
         print(f"{Colors.DIM}  This will automatically:{Colors.RESET}")
         print(f"{Colors.DIM}    • Create ~/.mini-agent/config/{Colors.RESET}")
@@ -475,7 +495,7 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
         system_prompt = system_prompt_path.read_text(encoding="utf-8")
         print(f"{Colors.GREEN}✅ Loaded system prompt (from: {system_prompt_path}){Colors.RESET}")
     else:
-        system_prompt = "You are Mini-Agent, an intelligent assistant powered by MiniMax M2 that can help users complete various tasks."
+        system_prompt = "You are Mini-Agent, an intelligent assistant powered by MiniMax M2.1 that can help users complete various tasks."
         print(f"{Colors.YELLOW}⚠️  System prompt not found, using default{Colors.RESET}")
 
     # 6. Inject Skills Metadata into System Prompt (Progressive Disclosure - Level 1)
@@ -540,15 +560,18 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
         event.current_buffer.insert_text("\n")
 
     # Create prompt session with history and auto-suggest
+    # Use FileHistory for persistent history across sessions (stored in user's home directory)
+    history_file = Path.home() / ".mini-agent" / ".history"
+    history_file.parent.mkdir(parents=True, exist_ok=True)
     session = PromptSession(
-        history=InMemoryHistory(),
+        history=FileHistory(str(history_file)),
         auto_suggest=AutoSuggestFromHistory(),
         completer=command_completer,
         style=prompt_style,
         key_bindings=kb,
     )
 
-    # 9. Interactive loop
+    # 10. Interactive loop
     while True:
         try:
             # Get user input using prompt_toolkit
@@ -622,7 +645,7 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
             print(f"\n{Colors.RED}❌ Error: {e}{Colors.RESET}")
             print(f"{Colors.DIM}{'─' * 60}{Colors.RESET}\n")
 
-    # 10. Cleanup MCP connections
+    # 11. Cleanup MCP connections
     try:
         print(f"{Colors.BRIGHT_CYAN}Cleaning up MCP connections...{Colors.RESET}")
         await cleanup_mcp_connections()
@@ -637,8 +660,9 @@ def main():
     args = parse_args()
 
     # Determine workspace directory
+    # Expand ~ to user home directory for portability
     if args.workspace:
-        workspace_dir = Path(args.workspace).absolute()
+        workspace_dir = Path(args.workspace).expanduser().absolute()
     else:
         # Use current working directory
         workspace_dir = Path.cwd()
