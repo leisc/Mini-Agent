@@ -27,6 +27,8 @@ class AnthropicClient(LLMClientBase):
         api_base: str = "https://api.minimaxi.com/anthropic",
         model: str = "MiniMax-M2.1",
         retry_config: RetryConfig | None = None,
+        model_context_limit: int | None = None,
+        context_safety_margin: int = 512,
     ):
         """Initialize Anthropic client.
 
@@ -36,7 +38,7 @@ class AnthropicClient(LLMClientBase):
             model: Model name to use (default: MiniMax-M2.1)
             retry_config: Optional retry configuration
         """
-        super().__init__(api_key, api_base, model, retry_config)
+        super().__init__(api_key, api_base, model, retry_config=retry_config, model_context_limit=model_context_limit, context_safety_margin=context_safety_margin)
 
         # Initialize Anthropic async client
         self.client = anthropic.AsyncAnthropic(
@@ -262,6 +264,9 @@ class AnthropicClient(LLMClientBase):
         Returns:
             LLMResponse containing the generated content
         """
+        # Ensure messages fit in model context window (may truncate/prune)
+        messages = self.enforce_context_limit(messages)
+
         # Prepare request
         request_params = self._prepare_request(messages, tools)
 

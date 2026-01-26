@@ -42,6 +42,8 @@ class LLMClient:
         proxy: str | None = None,
         reasoning_split: bool = False,
         retry_config: RetryConfig | None = None,
+        model_context_limit: int | None = None,
+        context_safety_margin: int = 512,
     ):
         """Initialize LLM client with specified provider.
 
@@ -91,6 +93,8 @@ class LLMClient:
                 api_base=full_api_base,
                 model=model,
                 retry_config=retry_config,
+                model_context_limit=model_context_limit,
+                context_safety_margin=context_safety_margin,
             )
         elif provider == LLMProvider.OPENAI:
             self._client = OpenAIClient(
@@ -100,6 +104,8 @@ class LLMClient:
                 proxy=proxy,
                 reasoning_split=reasoning_split,
                 retry_config=retry_config,
+                model_context_limit=model_context_limit,
+                context_safety_margin=context_safety_margin,
             )
         else:
             raise ValueError(f"Unsupported provider: {provider}")

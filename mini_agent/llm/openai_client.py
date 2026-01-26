@@ -31,6 +31,8 @@ class OpenAIClient(LLMClientBase):
         proxy: str | None = None,
         reasoning_split: bool = False,
         retry_config: RetryConfig | None = None,
+        model_context_limit: int | None = None,
+        context_safety_margin: int = 512,
     ):
         """Initialize OpenAI client.
 
@@ -40,7 +42,7 @@ class OpenAIClient(LLMClientBase):
             model: Model name to use (default: MiniMax-M2.1)
             retry_config: Optional retry configuration
         """
-        super().__init__(api_key, api_base, model, proxy, reasoning_split, retry_config)
+        super().__init__(api_key, api_base, model, proxy, reasoning_split, retry_config, model_context_limit=model_context_limit, context_safety_margin=context_safety_margin)
 
         if proxy:
             # Configure HTTPX transport with proxy
@@ -291,6 +293,9 @@ class OpenAIClient(LLMClientBase):
         Returns:
             LLMResponse containing the generated content
         """
+        # Ensure messages fit in model context window (may truncate/prune)
+        messages = self.enforce_context_limit(messages)
+
         # Prepare request
         request_params = self._prepare_request(messages, tools)
 

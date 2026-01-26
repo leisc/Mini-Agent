@@ -476,6 +476,8 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
         proxy=config.llm.proxy,
         reasoning_split=config.llm.reasoning_split,
         retry_config=retry_config if config.llm.retry.enabled else None,
+        model_context_limit=config.llm.model_context_limit,
+        context_safety_margin=config.llm.context_safety_margin,
     )
 
     # Set retry callback
@@ -559,6 +561,19 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
         """Insert a newline"""
         event.current_buffer.insert_text("\n")
 
+    @kb.add("escape")  # ESC: cancel current prompt input (stay in app)
+    def _(event):
+        """Cancel current input and return an empty result to the prompt.
+
+        This avoids raising KeyboardInterrupt and keeps the application running.
+        """
+        try:
+            # Return an empty string so prompt_async yields '' and the loop continues.
+            event.app.exit(result="")
+        except Exception:
+            # If exit result is already set, ignore the error.
+            pass
+
     # Create prompt session with history and auto-suggest
     # Use FileHistory for persistent history across sessions (stored in user's home directory)
     history_file = Path.home() / ".mini-agent" / ".history"
@@ -628,10 +643,43 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
                 print_stats(agent, session_start)
                 break
 
-            # Run Agent
-            print(f"\n{Colors.BRIGHT_BLUE}Agent{Colors.RESET} {Colors.DIM}›{Colors.RESET} {Colors.DIM}Thinking...{Colors.RESET}\n")
+            # Run Agent as a background task and allow ESC to cancel it
+            print(f"\n{Colors.BRIGHT_BLUE}Agent{Colors.RESET} {Colors.DIM}›{Colors.RESET} {Colors.DIM}Thinking... (press ESC to cancel){Colors.RESET}\n")
             agent.add_user_message(user_input)
-            _ = await agent.run()
+
+            # Start agent run in background
+            agent_task = asyncio.create_task(agent.run())
+
+            # Temporary key bindings for the thinking prompt: ESC -> return special token
+            thinking_kb = KeyBindings()
+
+            @thinking_kb.add("escape")
+            def _(event):
+                event.app.exit(result="__CANCEL__")
+
+            try:
+                # Show a small prompt so user can press ESC to cancel the running task.
+                cancel_result = await session.prompt_async(
+                    [("class:prompt", ""), ("", " Press ESC to cancel... \n")],
+                    multiline=False,
+                    enable_history_search=False,
+                    key_bindings=thinking_kb,
+                )
+
+                if cancel_result == "__CANCEL__":
+                    if not agent_task.done():
+                        agent_task.cancel()
+                        try:
+                            await agent_task
+                        except asyncio.CancelledError:
+                            print(f"{Colors.BRIGHT_YELLOW}⚠️ Agent run canceled by user{Colors.RESET}")
+                else:
+                    # User pressed Enter or typed something; wait for completion.
+                    await agent_task
+            except Exception:
+                if not agent_task.done():
+                    agent_task.cancel()
+                raise
 
             # Visual separation - keep it simple like the reference code
             print(f"\n{Colors.DIM}{'─' * 60}{Colors.RESET}\n")

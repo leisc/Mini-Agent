@@ -30,6 +30,9 @@ class LLMConfig(BaseModel):
     proxy: str | None = None
     reasoning_split: bool = False
     retry: RetryConfig = Field(default_factory=RetryConfig)
+    # Context window configuration
+    model_context_limit: int | None = None  # e.g. 65536
+    context_safety_margin: int = 512
 
 
 class AgentConfig(BaseModel):
@@ -190,6 +193,8 @@ class Config(BaseModel):
             proxy=data.get("proxy"),
             reasoning_split=data.get("reasoning_split", False),
             retry=retry_config,
+            model_context_limit=data.get("model_context_limit"),
+            context_safety_margin=data.get("context_safety_margin", 512),
         )
 
         # Parse Agent configuration

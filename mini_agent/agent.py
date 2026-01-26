@@ -99,20 +99,20 @@ class Agent:
         for msg in self.messages:
             # Count text content
             if isinstance(msg.content, str):
-                total_tokens += len(encoding.encode(msg.content))
+                total_tokens += len(encoding.encode(msg.content, disallowed_special=()))
             elif isinstance(msg.content, list):
                 for block in msg.content:
                     if isinstance(block, dict):
                         # Convert dict to string for calculation
-                        total_tokens += len(encoding.encode(str(block)))
+                        total_tokens += len(encoding.encode(str(block), disallowed_special=()))
 
             # Count thinking
             if msg.thinking:
-                total_tokens += len(encoding.encode(msg.thinking))
+                total_tokens += len(encoding.encode(msg.thinking, disallowed_special=()))
 
             # Count tool_calls
             if msg.tool_calls:
-                total_tokens += len(encoding.encode(str(msg.tool_calls)))
+                total_tokens += len(encoding.encode(str(msg.tool_calls), disallowed_special=()))
 
             # Metadata overhead per message (approximately 4 tokens)
             total_tokens += 4
