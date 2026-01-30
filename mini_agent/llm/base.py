@@ -133,9 +133,11 @@ class LLMClientBase(ABC):
         # Work on a shallow copy
         msgs = [m.copy() for m in messages]
 
+        print(msgs[1])
+
         total = self._estimate_tokens_for_messages(msgs)
         if total <= target:
-            return msgs
+            return msgs      
 
         logger.warning("Context token estimate %d > limit %d; compressing messages", total, target)
 

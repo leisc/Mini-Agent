@@ -649,7 +649,6 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
 
             # Start agent run in background
             agent_task = asyncio.create_task(agent.run())
-
             # Temporary key bindings for the thinking prompt: ESC -> return special token
             thinking_kb = KeyBindings()
 
@@ -658,24 +657,57 @@ async def run_agent(workspace_dir: Path, args: argparse.Namespace):
                 event.app.exit(result="__CANCEL__")
 
             try:
-                # Show a small prompt so user can press ESC to cancel the running task.
-                cancel_result = await session.prompt_async(
-                    [("class:prompt", ""), ("", " Press ESC to cancel... \n")],
-                    multiline=False,
-                    enable_history_search=False,
-                    key_bindings=thinking_kb,
+
+
+                # # Show a small prompt so user can press ESC to cancel the running task.
+                # cancel_result = await session.prompt_async(
+                #     [("class:prompt", ""), ("", " Press ESC to cancel... \n")],
+                #     multiline=False,
+                #     enable_history_search=False,
+                #     key_bindings=thinking_kb,
+                # )
+
+                # if cancel_result == "__CANCEL__":
+                #     if not agent_task.done():
+                #         agent_task.cancel()
+                #         try:
+                #             await agent_task
+                #         except asyncio.CancelledError:
+                #             print(f"{Colors.BRIGHT_YELLOW}⚠️ Agent run canceled by user{Colors.RESET}")
+                # else:
+                #     # User pressed Enter or typed something; wait for completion.
+                #     await agent_task 
+
+                # Create a task for the prompt so we can cancel it
+                prompt_task = asyncio.create_task(
+                    session.prompt_async(
+                        [("class:prompt", ""), ("", " Press ESC to cancel... \n")],
+                        multiline=False,
+                        key_bindings=thinking_kb,
+                    )
                 )
 
-                if cancel_result == "__CANCEL__":
+                done, pending = await asyncio.wait(
+                    [agent_task, prompt_task],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+
+                # Cancel whichever is still running
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+                if prompt_task in done and prompt_task.result() == "__CANCEL__":
+                    # User explicitly cancelled
                     if not agent_task.done():
                         agent_task.cancel()
-                        try:
-                            await agent_task
-                        except asyncio.CancelledError:
-                            print(f"{Colors.BRIGHT_YELLOW}⚠️ Agent run canceled by user{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_YELLOW}⚠️ Agent run canceled by user{Colors.RESET}")
                 else:
-                    # User pressed Enter or typed something; wait for completion.
-                    await agent_task
+                    # Agent finished (or user pressed Enter)
+                    agent_result = await agent_task  # Get the result
             except Exception:
                 if not agent_task.done():
                     agent_task.cancel()
